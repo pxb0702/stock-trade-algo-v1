@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Trade Algo v1 - A股量化回测与交易终端</title>
+    <!-- Google Fonts & FontAwesome -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- ECharts CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Top Navigation Bar -->
+        <header class="top-nav">
+            <div class="brand">
+                <div class="logo-icon"><i class="fa-solid fa-chart-line"></i></div>
+                <div>
+                    <h1 class="logo-title">STOCK TRADE ALGO <span class="badge-version">v1.0</span></h1>
+                    <p class="logo-subtitle">China A-Shares Quant Momentum Engine (Dual EMA + MACD + ATR Trailing Stop)</p>
+                </div>
+            </div>
+
+            <!-- Quick Watchlist Buttons -->
+            <div class="quick-watchlist" id="watchlistContainer">
+                {% for item in watchlist %}
+                <button class="watchlist-btn {% if loop.first %}active{% endif %}" data-code="{{ item.code }}">
+                    <span class="code">{{ item.code }}</span>
+                    <span class="name">{{ item.name }}</span>
+                </button>
+                {% endfor %}
+            </div>
+
+            <div class="nav-actions">
+                <span class="system-status"><span class="dot"></span> A股 T+1 仿真引擎</span>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <div class="workspace">
+            <!-- Left Sidebar / Parameter Controls -->
+            <aside class="sidebar">
+                <div class="panel-header">
+                    <h2><i class="fa-solid fa-sliders"></i> 回测控制台</h2>
+                    <span class="tooltip-text">参数微调后即刻回测</span>
+                </div>
+
+                <form id="backtestForm" class="control-form">
+                    <!-- Stock Selection -->
+                    <div class="form-group">
+                        <label for="stockCode"><i class="fa-solid fa-magnifying-glass"></i> 标的代码 (A股/ETF)</label>
+                        <div class="input-with-action">
+                            <input type="text" id="stockCode" name="code" value="510300" placeholder="如 510300, 600519">
+                            <span class="stock-badge" id="currentStockName">沪深300ETF</span>
+                        </div>
+                    </div>
+
+                    <!-- Date Range -->
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="startDate"><i class="fa-regular fa-calendar"></i> 开始日期</label>
+                            <input type="date" id="startDate" name="start_date" value="2021-01-01">
+                        </div>
+                        <div class="form-group half">
+                            <label for="endDate"><i class="fa-regular fa-calendar-check"></i> 结束日期</label>
+                            <input type="date" id="endDate" name="end_date" value="2024-12-31">
+                        </div>
+                    </div>
+
+                    <!-- Capital -->
+                    <div class="form-group">
+                        <label for="initialCash"><i class="fa-solid fa-yen-sign"></i> 初始本金 (RMB)</label>
+                        <input type="number" id="initialCash" name="initial_cash" value="100000" step="10000" min="10000">
+                    </div>
+
+                    <div class="section-divider"><span>策略参数配置</span></div>
+
+                    <!-- EMA Parameters -->
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="fastEma">快线 EMA (日)</label>
+                            <input type="number" id="fastEma" name="fast_ema" value="12" min="3" max="50">
+                        </div>
+                        <div class="form-group half">
+                            <label for="slowEma">慢线 EMA (日)</label>
+                            <input type="number" id="slowEma" name="slow_ema" value="26" min="10" max="120">
+                        </div>
+                    </div>
+
+                    <!-- MACD Signal -->
+                    <div class="form-group">
+                        <label for="macdSignal">MACD 信号平滑期 (DEA)</label>
+                        <input type="number" id="macdSignal" name="macd_signal" value="9" min="3" max="30">
+                    </div>
+
+                    <!-- ATR Trailing Stop Multiplier -->
+                    <div class="form-group">
+                        <div class="label-with-val">
+                            <label for="atrMultiplier">ATR 追踪止损倍数</label>
+                            <span class="val-display" id="atrVal">2.0 × ATR</span>
+                        </div>
+                        <input type="range" id="atrMultiplier" name="atr_multiplier" min="1.0" max="4.0" step="0.1" value="2.0">
+                    </div>
+
+                    <!-- Risk Budget per trade -->
+                    <div class="form-group">
+                        <div class="label-with-val">
+                            <label for="riskPct">单笔风险预算 (%)</label>
+                            <span class="val-display" id="riskVal">2.0%</span>
+                        </div>
+                        <input type="range" id="riskPct" name="risk_per_trade_pct" min="0.005" max="0.05" step="0.005" value="0.02">
+                    </div>
+
+                    <!-- Realistic Rules info -->
+                    <div class="rules-box">
+                        <div class="rule-item"><i class="fa-solid fa-check-circle"></i> 严格执行 <strong>T+1</strong> 交易锁仓</div>
+                        <div class="rule-item"><i class="fa-solid fa-check-circle"></i> 最小买入 <strong>100股 (1手)</strong> 约束</div>
+                        <div class="rule-item"><i class="fa-solid fa-check-circle"></i> 印花税 <strong>0.05%</strong> (单向卖出)</div>
+                        <div class="rule-item"><i class="fa-solid fa-check-circle"></i> 券商佣金 <strong>0.03%</strong> (¥5起) + 过户费</div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" id="submitBtn" class="btn-primary">
+                        <i class="fa-solid fa-play"></i> 运行回测与策略仿真
+                    </button>
+                </form>
+            </aside>
+
+            <!-- Main Content Area -->
+            <main class="main-content">
+                <!-- Metrics Bar -->
+                <div class="metrics-grid">
+                    <div class="metric-card" id="cardTotalReturn">
+                        <div class="metric-header">
+                            <span>累计收益率</span>
+                            <i class="fa-solid fa-percent"></i>
+                        </div>
+                        <div class="metric-value" id="valTotalReturn">--%</div>
+                        <div class="metric-sub" id="valBenchmarkReturn">基准: --%</div>
+                    </div>
+
+                    <div class="metric-card" id="cardCagr">
+                        <div class="metric-header">
+                            <span>年化收益 (CAGR)</span>
+                            <i class="fa-solid fa-rocket"></i>
+                        </div>
+                        <div class="metric-value" id="valCagr">--%</div>
+                        <div class="metric-sub" id="valExcessReturn">超额 Alpha: --%</div>
+                    </div>
+
+                    <div class="metric-card" id="cardMaxDrawdown">
+                        <div class="metric-header">
+                            <span>最大回撤 (MaxDD)</span>
+                            <i class="fa-solid fa-arrow-trend-down"></i>
+                        </div>
+                        <div class="metric-value danger" id="valMaxDrawdown">--%</div>
+                        <div class="metric-sub" id="valCalmar">卡玛比率: --</div>
+                    </div>
+
+                    <div class="metric-card" id="cardSharpe">
+                        <div class="metric-header">
+                            <span>夏普比率 (Sharpe)</span>
+                            <i class="fa-solid fa-scale-balanced"></i>
+                        </div>
+                        <div class="metric-value" id="valSharpe">--</div>
+                        <div class="metric-sub" id="valSortino">索提诺比率: --</div>
+                    </div>
+
+                    <div class="metric-card" id="cardWinRate">
+                        <div class="metric-header">
+                            <span>胜率 / 盈亏比</span>
+                            <i class="fa-solid fa-bullseye"></i>
+                        </div>
+                        <div class="metric-value" id="valWinRate">--%</div>
+                        <div class="metric-sub" id="valWinLossRatio">盈亏比: -- | 获利因子: --</div>
+                    </div>
+
+                    <div class="metric-card" id="cardEquity">
+                        <div class="metric-header">
+                            <span>期末净值 (本金 10万)</span>
+                            <i class="fa-solid fa-vault"></i>
+                        </div>
+                        <div class="metric-value" id="valFinalEquity">¥--</div>
+                        <div class="metric-sub" id="valTradeCount">总交易: -- 笔 (持仓均 -- 天)</div>
+                    </div>
+                </div>
+
+                <!-- Tabs & Charts Section -->
+                <div class="chart-container-box">
+                    <div class="tabs-header">
+                        <button class="tab-btn active" data-tab="klineTab">
+                            <i class="fa-solid fa-chart-candlestick"></i> K线形态与交易信号点 (OHLC + EMA + MACD)
+                        </button>
+                        <button class="tab-btn" data-tab="equityTab">
+                            <i class="fa-solid fa-chart-area"></i> 账户净值曲线 vs 买入持有基准 (Equity & Drawdown)
+                        </button>
+                        <button class="tab-btn" data-tab="tradesTab">
+                            <i class="fa-solid fa-list-check"></i> 交易明细流水 (<span id="tradesBadgeCount">0</span>)
+                        </button>
+                    </div>
+
+                    <div class="tab-content active" id="klineTab">
+                        <div id="klineChart" class="echarts-box"></div>
+                    </div>
+
+                    <div class="tab-content" id="equityTab">
+                        <div id="equityChart" class="echarts-box"></div>
+                    </div>
+
+                    <div class="tab-content" id="tradesTab">
+                        <div class="table-responsive">
+                            <table class="trades-table" id="tradesTable">
+                                <thead>
+                                    <tr>
+                                        <th>序号</th>
+                                        <th>入场日期</th>
+                                        <th>入场价</th>
+                                        <th>出场日期</th>
+                                        <th>出场价</th>
+                                        <th>股数</th>
+                                        <th>总手续费</th>
+                                        <th>净盈亏 (RMB)</th>
+                                        <th>盈亏率</th>
+                                        <th>持仓天数</th>
+                                        <th>平仓原因</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tradesTableBody">
+                                    <tr><td colspan="11" class="empty-state">暂无交易记录，点击"运行回测"以生成。</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

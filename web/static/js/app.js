@@ -1,6 +1,6 @@
 /**
- * Stock Trade Algo v1 - Frontend JavaScript
- * ECharts Candlestick, MACD, Equity Curve and Dynamic Backtesting Controller
+ * Stock Trade Algo v2 - Frontend JavaScript
+ * ECharts Candlestick, MACD, Equity Curve and Dynamic Dual-Regime Backtesting Controller
  */
 
 let klineChart = null;
@@ -10,7 +10,7 @@ let currentData = null;
 document.addEventListener("DOMContentLoaded", () => {
     initCharts();
     initEventListeners();
-    // Auto run first backtest on load
+    // Auto run first backtest on load for 平安银行 (000001)
     runBacktest();
 });
 
@@ -33,19 +33,27 @@ function initCharts() {
 
 function initEventListeners() {
     // Slider value sync
+    const tpSlider = document.getElementById("takeProfitPct");
+    const tpDisplay = document.getElementById("tpVal");
+    if (tpSlider && tpDisplay) {
+        tpSlider.addEventListener("input", (e) => {
+            tpDisplay.textContent = `+${(parseFloat(e.target.value) * 100).toFixed(1)}%`;
+        });
+    }
+
+    const slSlider = document.getElementById("stopLossPct");
+    const slDisplay = document.getElementById("slVal");
+    if (slSlider && slDisplay) {
+        slSlider.addEventListener("input", (e) => {
+            slDisplay.textContent = `-${(parseFloat(e.target.value) * 100).toFixed(1)}%`;
+        });
+    }
+
     const atrSlider = document.getElementById("atrMultiplier");
     const atrDisplay = document.getElementById("atrVal");
     if (atrSlider && atrDisplay) {
         atrSlider.addEventListener("input", (e) => {
             atrDisplay.textContent = `${parseFloat(e.target.value).toFixed(1)} × ATR`;
-        });
-    }
-
-    const riskSlider = document.getElementById("riskPct");
-    const riskDisplay = document.getElementById("riskVal");
-    if (riskSlider && riskDisplay) {
-        riskSlider.addEventListener("input", (e) => {
-            riskDisplay.textContent = `${(parseFloat(e.target.value) * 100).toFixed(1)}%`;
         });
     }
 
@@ -61,7 +69,6 @@ function initEventListeners() {
             const targetContent = document.getElementById(targetId);
             if (targetContent) {
                 targetContent.classList.add("active");
-                // Resize charts when tab becomes visible
                 setTimeout(() => {
                     if (targetId === "klineTab" && klineChart) klineChart.resize();
                     if (targetId === "equityTab" && equityChart) equityChart.resize();
@@ -97,15 +104,15 @@ function initEventListeners() {
 
 async function runBacktest() {
     const submitBtn = document.getElementById("submitBtn");
-    const code = document.getElementById("stockCode").value.trim() || "510300";
+    const code = document.getElementById("stockCode").value.trim() || "000001";
     const startDate = document.getElementById("startDate").value;
     const endDate = document.getElementById("endDate").value;
     const initialCash = parseFloat(document.getElementById("initialCash").value) || 100000;
-    const fastEma = parseInt(document.getElementById("fastEma").value) || 12;
-    const slowEma = parseInt(document.getElementById("slowEma").value) || 26;
-    const macdSignal = parseInt(document.getElementById("macdSignal").value) || 9;
-    const atrMultiplier = parseFloat(document.getElementById("atrMultiplier").value) || 2.0;
-    const riskPct = parseFloat(document.getElementById("riskPct").value) || 0.02;
+    const tpPct = parseFloat(document.getElementById("takeProfitPct").value) || 0.08;
+    const slPct = parseFloat(document.getElementById("stopLossPct").value) || 0.03;
+    const atrMultiplier = parseFloat(document.getElementById("atrMultiplier").value) || 2.2;
+    const enableRegime = document.getElementById("enableRegime") ? document.getElementById("enableRegime").checked : true;
+    const enableOversold = document.getElementById("enableOversold") ? document.getElementById("enableOversold").checked : true;
 
     if (submitBtn) {
         submitBtn.disabled = true;
@@ -121,11 +128,12 @@ async function runBacktest() {
                 start_date: startDate,
                 end_date: endDate,
                 initial_cash: initialCash,
-                fast_ema: fastEma,
-                slow_ema: slowEma,
-                macd_signal: macdSignal,
+                take_profit_pct: tpPct,
+                stop_loss_pct: slPct,
                 atr_multiplier: atrMultiplier,
-                risk_per_trade_pct: riskPct
+                enable_regime_filter: enableRegime,
+                enable_oversold_swing: enableOversold,
+                position_pct: 0.95
             })
         });
 
@@ -161,7 +169,7 @@ async function runBacktest() {
     } finally {
         if (submitBtn) {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 运行回测与策略仿真';
+            submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 运行 v2 优化回测';
         }
     }
 }
@@ -220,6 +228,7 @@ function renderKlineChart(chartData, name, code) {
     const volumes = chartData.volumes;
     const emaFast = chartData.ema_fast;
     const emaSlow = chartData.ema_slow;
+    const sma60 = chartData.sma_60;
     const dif = chartData.macd_dif;
     const dea = chartData.macd_dea;
     const hist = chartData.macd_hist;
@@ -255,7 +264,7 @@ function renderKlineChart(chartData, name, code) {
         backgroundColor: '#151a28',
         animation: false,
         legend: {
-            data: ['K线', 'EMA快线', 'EMA慢线', '成交量', 'DIF', 'DEA', 'MACD柱'],
+            data: ['K线', 'EMA快线', 'EMA慢线', 'SMA60牛熊线', '成交量', 'DIF', 'DEA', 'MACD柱'],
             textStyle: { color: '#94a3b8', fontSize: 11 },
             top: 6,
             left: 10
@@ -324,6 +333,14 @@ function renderKlineChart(chartData, name, code) {
                 smooth: true,
                 showSymbol: false,
                 lineStyle: { color: '#f59e0b', width: 1.5 }
+            },
+            {
+                name: 'SMA60牛熊线',
+                type: 'line',
+                data: sma60,
+                smooth: true,
+                showSymbol: false,
+                lineStyle: { color: '#a855f7', width: 1.8, type: 'dashed' }
             },
             {
                 name: '成交量',
@@ -471,7 +488,7 @@ function renderTradesTable(trades) {
         const isPos = t.net_pnl >= 0;
         const pnlClass = isPos ? 'pnl-pos' : 'pnl-neg';
         const sign = isPos ? '+' : '';
-        const isStop = t.exit_reason.includes("Stop");
+        const isStop = t.exit_reason.includes("Stop") || t.exit_reason.includes("Break");
 
         rowsHtml += `
             <tr>

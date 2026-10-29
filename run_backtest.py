@@ -1,7 +1,7 @@
 """
-CLI Backtest Runner for Stock Trade Algo v1
+CLI Backtest Runner for Stock Trade Algo v2
 Usage:
-    python run_backtest.py --code 510300 --start 2021-01-01 --end 2024-12-31
+    python run_backtest.py --code 000001 --start 2021-01-01 --end 2024-12-31 --tp 0.08 --sl 0.03
 """
 
 import argparse
@@ -26,26 +26,31 @@ from rich.panel import Panel
 from config import TradingConfig, DEFAULT_WATCHLIST
 from core.data_feed import load_stock_data
 from core.indicators import add_all_indicators
-from core.strategy import TrendMomentumStrategy
+from core.strategy import DualRegimeAdaptiveStrategy
 from core.engine import BacktestEngine
 from core.metrics import calculate_performance_metrics
 
 
 def run_cli_backtest(
-    code: str = "510300",
+    code: str = "000001",
     start_date: str = "2021-01-01",
-    end_date: str = "2025-01-01",
+    end_date: str = "2024-12-31",
     initial_cash: float = 100_000.0,
     fast_ema: int = 12,
     slow_ema: int = 26,
     macd_signal: int = 9,
-    atr_multiplier: float = 2.0,
-    risk_pct: float = 0.02
+    take_profit_pct: float = 0.08,
+    stop_loss_pct: float = 0.03,
+    atr_multiplier: float = 2.2,
+    position_pct: float = 0.95,
+    enable_regime: bool = True,
+    enable_oversold: bool = True
 ):
     console = Console()
-    console.print(Panel(f"[bold cyan]China A-Shares Quantitative Backtest Engine v1[/bold cyan]\n"
-                        f"Asset: [yellow]{code}[/yellow] | Window: [green]{start_date} ~ {end_date}[/green] | Capital: [white]RMB {initial_cash:,.2f}[/white]",
-                        title="[bold blue]Stock Trade Algo v1[/bold blue]", border_style="cyan"))
+    console.print(Panel(f"[bold cyan]China A-Shares Quantitative Backtest Engine v2 (Dual-Regime)[/bold cyan]\n"
+                        f"Asset: [yellow]{code}[/yellow] | Window: [green]{start_date} ~ {end_date}[/green] | Capital: [white]RMB {initial_cash:,.2f}[/white]\n"
+                        f"Strategy: [magenta]Take Profit +{take_profit_pct*100:.1f}% | Stop Loss -{stop_loss_pct*100:.1f}% | ATR Trailing {atr_multiplier}x[/magenta]",
+                        title="[bold blue]Stock Trade Algo v2[/bold blue]", border_style="cyan"))
 
     # 1. Config
     config = TradingConfig(
@@ -53,8 +58,12 @@ def run_cli_backtest(
         fast_ema=fast_ema,
         slow_ema=slow_ema,
         macd_signal=macd_signal,
+        take_profit_pct=take_profit_pct,
+        stop_loss_pct=stop_loss_pct,
         atr_multiplier=atr_multiplier,
-        risk_per_trade_pct=risk_pct
+        max_position_pct=position_pct,
+        enable_regime_filter=enable_regime,
+        enable_oversold_swing=enable_oversold
     )
 
     # 2. Fetch Data
@@ -75,17 +84,21 @@ def run_cli_backtest(
         slow_ema=config.slow_ema,
         macd_signal=config.macd_signal,
         atr_period=config.atr_period,
-        rsi_period=config.rsi_period
+        rsi_period=config.rsi_period,
+        sma_fast=config.sma_fast,
+        sma_trend=config.sma_trend
     )
 
     # 4. Generate Strategy Signals
-    strat = TrendMomentumStrategy(
+    strat = DualRegimeAdaptiveStrategy(
         fast_ema=config.fast_ema,
         slow_ema=config.slow_ema,
         macd_signal=config.macd_signal,
-        atr_multiplier=config.atr_multiplier,
-        risk_per_trade_pct=config.risk_per_trade_pct,
-        rsi_overbought=config.rsi_overbought,
+        sma_trend=config.sma_trend,
+        sma_fast=config.sma_fast,
+        slope_lookback=config.slope_lookback,
+        enable_regime_filter=config.enable_regime_filter,
+        enable_oversold_swing=config.enable_oversold_swing,
         lot_size=config.lot_size
     )
     df_signals = strat.generate_signals(df_ind)
@@ -106,9 +119,10 @@ def run_cli_backtest(
     summary_table.add_column("Strategy Value", style="bold white", width=20)
     summary_table.add_column("Benchmark (Buy&Hold)", style="dim white", width=24)
 
-    summary_table.add_row("Total Return", f"{metrics['total_return_pct']:+.2f}%", f"{metrics['benchmark_return_pct']:+.2f}%")
-    summary_table.add_row("Annualized Return (CAGR)", f"{metrics['cagr_pct']:+.2f}%", f"{metrics['benchmark_cagr_pct']:+.2f}%")
-    summary_table.add_row("Excess Alpha", f"{metrics['excess_return_pct']:+.2f}%", "-")
+    ret_color = "green" if metrics['total_return_pct'] >= 0 else "red"
+    summary_table.add_row("Total Return", f"[{ret_color}]{metrics['total_return_pct']:+.2f}%[/{ret_color}]", f"{metrics['benchmark_return_pct']:+.2f}%")
+    summary_table.add_row("Annualized Return (CAGR)", f"[{ret_color}]{metrics['cagr_pct']:+.2f}%[/{ret_color}]", f"{metrics['benchmark_cagr_pct']:+.2f}%")
+    summary_table.add_row("Excess Alpha", f"[bold green]{metrics['excess_return_pct']:+.2f}%[/bold green]", "-")
     summary_table.add_row("Sharpe Ratio (Rf=2.5%)", f"{metrics['sharpe_ratio']:.2f}", "-")
     summary_table.add_row("Sortino Ratio", f"{metrics['sortino_ratio']:.2f}", "-")
     summary_table.add_row("Max Drawdown", f"[red]-{metrics['max_drawdown_pct']:.2f}%[/red]", "-")
@@ -132,9 +146,9 @@ def run_cli_backtest(
         trade_table.add_column("Shares", justify="right", width=8)
         trade_table.add_column("Net PnL (RMB)", justify="right", width=14)
         trade_table.add_column("Return %", justify="right", width=10)
-        trade_table.add_column("Exit Reason", width=22)
+        trade_table.add_column("Exit Reason", width=24)
 
-        for t in trades[-10:]:  # Display last 10
+        for t in trades[-12:]:  # Display last 12
             pnl_color = "green" if t.net_pnl >= 0 else "red"
             trade_table.add_row(
                 str(t.trade_id),
@@ -155,16 +169,18 @@ def run_cli_backtest(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="China A-Shares Backtest Runner")
-    parser.add_argument("--code", type=str, default="510300", help="Stock or ETF code (e.g. 510300, 600519)")
+    parser = argparse.ArgumentParser(description="China A-Shares Backtest Runner v2")
+    parser.add_argument("--code", type=str, default="000001", help="Stock or ETF code (e.g. 000001, 510300)")
     parser.add_argument("--start", type=str, default="2021-01-01", help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--end", type=str, default="2025-01-01", help="End date (YYYY-MM-DD)")
+    parser.add_argument("--end", type=str, default="2024-12-31", help="End date (YYYY-MM-DD)")
     parser.add_argument("--capital", type=float, default=100000.0, help="Initial cash capital")
     parser.add_argument("--fast", type=int, default=12, help="Fast EMA period")
     parser.add_argument("--slow", type=int, default=26, help="Slow EMA period")
     parser.add_argument("--signal", type=int, default=9, help="MACD signal period")
-    parser.add_argument("--atr_mult", type=float, default=2.0, help="ATR trailing stop multiplier")
-    parser.add_argument("--risk", type=float, default=0.02, help="Risk per trade percentage")
+    parser.add_argument("--tp", type=float, default=0.08, help="Target Take Profit percentage (e.g. 0.08 = 8%%)")
+    parser.add_argument("--sl", type=float, default=0.03, help="Hard Stop Loss percentage (e.g. 0.03 = 3%%)")
+    parser.add_argument("--atrm", type=float, default=2.2, help="ATR trailing stop multiplier")
+    parser.add_argument("--pos_pct", type=float, default=0.95, help="Position capital allocation percentage")
 
     args = parser.parse_args()
     run_cli_backtest(
@@ -175,6 +191,8 @@ if __name__ == "__main__":
         fast_ema=args.fast,
         slow_ema=args.slow,
         macd_signal=args.signal,
-        atr_multiplier=args.atr_mult,
-        risk_pct=args.risk
+        take_profit_pct=args.tp,
+        stop_loss_pct=args.sl,
+        atr_multiplier=args.atrm,
+        position_pct=args.pos_pct
     )

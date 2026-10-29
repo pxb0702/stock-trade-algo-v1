@@ -34,7 +34,6 @@ def calculate_macd(
     ema_slow = calculate_ema(close, slow_period)
     dif = ema_fast - ema_slow
     dea = calculate_ema(dif, signal_period)
-    # Chinese A-share standard: MACD bar is usually 2 * (DIF - DEA)
     macd_hist = 2.0 * (dif - dea)
     return dif, dea, macd_hist
 
@@ -45,19 +44,14 @@ def calculate_atr(
     close: pd.Series,
     period: int = 14
 ) -> pd.Series:
-    """
-    Calculate Average True Range (ATR).
-    TR = max(High - Low, |High - Close_prev|, |Low - Close_prev|)
-    """
+    """Calculate Average True Range (ATR)."""
     prev_close = close.shift(1)
     tr1 = high - low
     tr2 = (high - prev_close).abs()
     tr3 = (low - prev_close).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     
-    # Wilder's Smoothing for ATR (or EMA with alpha=1/period)
     atr = tr.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
-    # Backfill initial values
     atr = atr.bfill().fillna(0.0)
     return atr
 
@@ -95,18 +89,22 @@ def add_all_indicators(
     slow_ema: int = 26,
     macd_signal: int = 9,
     atr_period: int = 14,
-    rsi_period: int = 14
+    rsi_period: int = 14,
+    sma_fast: int = 20,
+    sma_trend: int = 60
 ) -> pd.DataFrame:
     """
-    Enrich OHLCV dataframe with trend, momentum and volatility indicators.
+    Enrich OHLCV dataframe with comprehensive indicators for Dual-Regime strategy.
     """
     data = df.copy()
     
     # Moving Averages
     data['ema_fast'] = calculate_ema(data['close'], fast_ema)
     data['ema_slow'] = calculate_ema(data['close'], slow_ema)
-    data['sma_50'] = calculate_sma(data['close'], 50)
-    data['sma_200'] = calculate_sma(data['close'], 200)
+    data['sma_20'] = calculate_sma(data['close'], sma_fast)
+    data['sma_60'] = calculate_sma(data['close'], sma_trend)
+    data['sma_120'] = calculate_sma(data['close'], 120)
+    data['vol_ma5'] = calculate_sma(data['volume'], 5)
     
     # MACD
     dif, dea, hist = calculate_macd(data['close'], fast_ema, slow_ema, macd_signal)
@@ -114,9 +112,10 @@ def add_all_indicators(
     data['macd_dea'] = dea
     data['macd_hist'] = hist
     
-    # ATR & RSI
+    # ATR & RSIs
     data['atr'] = calculate_atr(data['high'], data['low'], data['close'], atr_period)
     data['rsi'] = calculate_rsi(data['close'], rsi_period)
+    data['rsi_fast'] = calculate_rsi(data['close'], 6)
     
     # Bollinger Bands
     bb_up, bb_mid, bb_low = calculate_bollinger_bands(data['close'], 20, 2.0)

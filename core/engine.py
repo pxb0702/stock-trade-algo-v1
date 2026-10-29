@@ -1,17 +1,16 @@
 """
-China A-Share Backtesting Engine
+China A-Share Backtesting Engine v2
 Event-driven simulation honoring T+1 settlement, 100-share lot sizes,
-stamp duty, broker commission minimums, and trailing stop exits.
+stamp duty, broker commission minimums, slippage,
+and multi-stage profit lock / hard stop loss / ATR trailing stops.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
-from datetime import datetime
 
 from config import TradingConfig
-from core.strategy import TrendMomentumStrategy
 
 
 @dataclass
@@ -46,12 +45,12 @@ class DailySnapshot:
 
 class BacktestEngine:
     """
-    Realistic A-Share Backtesting Engine.
+    Realistic A-Share Backtesting Engine with Multi-Stage Risk & Profit Architecture.
     """
     def __init__(self, config: Optional[TradingConfig] = None):
         self.config = config or TradingConfig()
         
-    def run(self, df: pd.DataFrame, stock_code: str = "510300") -> Dict[str, Any]:
+    def run(self, df: pd.DataFrame, stock_code: str = "000001") -> Dict[str, Any]:
         """
         Execute backtest over historical dataset.
         df must contain: date, open, high, low, close, volume, indicators, raw signals.
@@ -84,6 +83,9 @@ class BacktestEngine:
         peak_equity = cash
         trade_counter = 0
 
+        # Start evaluation after warmup period
+        warmup = max(60, self.config.sma_trend + self.config.slope_lookback)
+
         for i in range(n_bars):
             row = data.iloc[i]
             bar_date = str(row['date'])[:10]
@@ -92,47 +94,58 @@ class BacktestEngine:
             low_p = float(row['low'])
             close_p = float(row['close'])
             atr_val = float(row.get('atr', close_p * 0.02))
+            sma20_val = float(row.get('sma_20', close_p))
             
             # --- 1. Daily T+1 Settlement (Morning Routine) ---
-            # Unfreeze shares bought on previous days
             shares_available += shares_frozen
             shares_frozen = 0
             
-            # Current holding valuation at today's close
             stock_value = shares_held * close_p
             total_equity = cash + stock_value
             peak_equity = max(peak_equity, total_equity)
             drawdown = (total_equity - peak_equity) / peak_equity if peak_equity > 0 else 0.0
-            
             benchmark_equity = benchmark_initial_cash + (benchmark_initial_shares * close_p)
             
             # --- 2. Check Exits for Existing Positions ---
-            if shares_held > 0 and shares_available > 0:
-                # Update trailing stop price ratcheting
-                if high_p > highest_price_seen:
-                    highest_price_seen = high_p
-                    new_stop = highest_price_seen - (atr_val * self.config.atr_multiplier)
-                    current_stop_price = max(current_stop_price, new_stop)
-                    
+            if shares_held > 0 and shares_available > 0 and i > entry_index:
+                highest_price_seen = max(highest_price_seen, high_p)
+                max_gain = (high_p - entry_price) / entry_price
+                cur_gain = (close_p - entry_price) / entry_price
+                
+                # Dynamic ATR Trailing Stop calculation
+                trailing_stop_level = highest_price_seen - (atr_val * self.config.atr_multiplier)
+                
                 exit_triggered = False
                 exit_price = 0.0
                 exit_reason = ""
                 
-                # Check ATR Stop Hit (Intraday Low breached stop price)
-                if low_p <= current_stop_price:
+                # Rule 1: Target Take Profit
+                if max_gain >= self.config.take_profit_pct:
                     exit_triggered = True
-                    # If opened below stop, execute at open; otherwise stop level minus slippage
-                    exit_price = min(open_p, current_stop_price) * (1.0 - self.config.slippage_pct)
-                    exit_reason = "ATR Trailing Stop"
-                
-                # Check Macro Strategy Sell Signal
-                elif bool(row.get('raw_sell_signal', False)):
-                    exit_triggered = True
-                    # Exit at close with slippage
-                    exit_price = close_p * (1.0 - self.config.slippage_pct)
-                    exit_reason = "Trend Reversal Signal"
+                    target_p = entry_price * (1.0 + self.config.take_profit_pct)
+                    exit_price = target_p * (1.0 - self.config.slippage_pct)
+                    exit_reason = f"Target Take Profit (+{self.config.take_profit_pct*100:.1f}%)"
                     
-                # Force exit at the very last bar of backtest
+                # Rule 2: Hard Stop Loss (Protects against sharp drops)
+                elif (entry_price - low_p) / entry_price >= self.config.stop_loss_pct and max_gain < 0.015:
+                    exit_triggered = True
+                    stop_p = entry_price * (1.0 - self.config.stop_loss_pct)
+                    exit_price = stop_p * (1.0 - self.config.slippage_pct)
+                    exit_reason = f"Hard Stop Loss (-{self.config.stop_loss_pct*100:.1f}%)"
+                    
+                # Rule 3: ATR Trailing Stop (Ratchets to lock in profits once gained > 2%)
+                elif low_p <= trailing_stop_level and max_gain >= 0.02:
+                    exit_triggered = True
+                    exit_price = max(low_p, trailing_stop_level) * (1.0 - self.config.slippage_pct)
+                    exit_reason = "ATR Trailing Profit Lock"
+                    
+                # Rule 4: Trend Breakdown Exit (Cut losses when breaking SMA20)
+                elif close_p < sma20_val and cur_gain < -0.01:
+                    exit_triggered = True
+                    exit_price = close_p * (1.0 - self.config.slippage_pct)
+                    exit_reason = "Trend Breakdown (SMA20 Break)"
+                    
+                # Rule 5: End of Backtest Period
                 elif i == n_bars - 1:
                     exit_triggered = True
                     exit_price = close_p
@@ -143,19 +156,15 @@ class BacktestEngine:
                     sell_shares = shares_available
                     gross_proceeds = sell_shares * exit_price
                     
-                    # Calculate Fees
-                    # Broker Commission (Min 5 RMB)
+                    # Transaction Fees
                     commission = max(gross_proceeds * self.config.commission_rate, self.config.min_commission)
-                    # Transfer Fee
                     transfer_fee = gross_proceeds * self.config.transfer_fee_rate
-                    # Stamp Duty (Sell side only)
-                    stamp_duty = gross_proceeds * self.config.stamp_duty_rate
+                    stamp_duty = gross_proceeds * self.config.stamp_duty_rate  # Sell side only
                     total_sell_fees = commission + transfer_fee + stamp_duty
                     
                     net_proceeds = gross_proceeds - total_sell_fees
                     cash += net_proceeds
                     
-                    # PnL metrics
                     invested_cost = sell_shares * entry_price
                     gross_pnl = (exit_price - entry_price) * sell_shares
                     net_pnl = gross_pnl - total_sell_fees
@@ -178,7 +187,6 @@ class BacktestEngine:
                         exit_reason=exit_reason
                     ))
                     
-                    # Clear position
                     shares_held -= sell_shares
                     shares_available = 0
                     entry_price = 0.0
@@ -187,25 +195,15 @@ class BacktestEngine:
                     current_stop_price = 0.0
             
             # --- 3. Check Entries if Flat ---
-            if shares_held == 0 and i < n_bars - 1:
+            if shares_held == 0 and i >= warmup and i < n_bars - 1:
                 buy_signal = bool(row.get('raw_buy_signal', False))
                 if buy_signal:
                     exec_buy_price = close_p * (1.0 + self.config.slippage_pct)
                     
-                    # Volatility-based Risk Budgeting
-                    risk_amount = total_equity * self.config.risk_per_trade_pct
-                    risk_per_share = max(atr_val * self.config.atr_multiplier, exec_buy_price * 0.02)
-                    
-                    target_shares = int(risk_amount / risk_per_share)
-                    
-                    # Round down to A-share lot size (100 shares = 1 手)
-                    target_shares = (target_shares // self.config.lot_size) * self.config.lot_size
-                    
-                    # Max position budget check (max allocation % of current cash)
-                    max_affordable_shares = int((cash * self.config.max_position_pct) / exec_buy_price)
-                    max_affordable_shares = (max_affordable_shares // self.config.lot_size) * self.config.lot_size
-                    
-                    buy_shares = min(target_shares, max_affordable_shares)
+                    # Allocate based on maximum position capital budget
+                    available_budget = cash * self.config.max_position_pct
+                    buy_shares = int(available_budget / exec_buy_price)
+                    buy_shares = (buy_shares // self.config.lot_size) * self.config.lot_size
                     
                     if buy_shares >= self.config.lot_size:
                         gross_cost = buy_shares * exec_buy_price
@@ -216,16 +214,15 @@ class BacktestEngine:
                         if cash >= (gross_cost + total_buy_fees):
                             cash -= (gross_cost + total_buy_fees)
                             shares_held = buy_shares
-                            shares_frozen = buy_shares  # T+1 rule: locked until next day
+                            shares_frozen = buy_shares  # T+1 lock
                             shares_available = 0
                             
                             entry_price = exec_buy_price
                             entry_date = bar_date
                             entry_index = i
                             highest_price_seen = high_p
-                            current_stop_price = entry_price - (atr_val * self.config.atr_multiplier)
+                            current_stop_price = entry_price * (1.0 - self.config.stop_loss_pct)
             
-            # Recompute total equity at end of day
             daily_total_equity = cash + (shares_held * close_p)
             prev_equity = equity_curve[-1].total_equity if equity_curve else self.config.initial_cash
             daily_ret = (daily_total_equity - prev_equity) / prev_equity if prev_equity > 0 else 0.0

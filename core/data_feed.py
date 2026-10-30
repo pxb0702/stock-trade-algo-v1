@@ -12,6 +12,7 @@ import os
 import json
 import time
 import warnings
+import urllib.request
 import requests
 import numpy as np
 import pandas as pd
@@ -39,7 +40,41 @@ COMMON_NAMES: Dict[str, str] = {
     "600900": "长江电力",
     "510500": "中证500ETF",
     "588000": "科创50ETF",
+    "000333": "美的集团",
+    "601988": "中国银行",
+    "600000": "浦发银行",
 }
+
+
+def resolve_stock_name(code: str, fallback_name: Optional[str] = None) -> str:
+    """
+    Resolve real Chinese stock/ETF name dynamically.
+    Priority:
+    1. Known directory in COMMON_NAMES
+    2. Tencent live quote API (fastest, lightweight)
+    3. Fallback name or code
+    """
+    clean_code = "".join(filter(str.isdigit, str(code)))
+    if not clean_code:
+        return fallback_name or str(code)
+    if clean_code in COMMON_NAMES:
+        return COMMON_NAMES[clean_code]
+        
+    prefix = get_market_prefix(clean_code)
+    url = f"http://qt.gtimg.cn/q={prefix}{clean_code}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            content = resp.read().decode("gbk", errors="ignore")
+            parts = content.split("~")
+            if len(parts) > 2 and parts[1].strip():
+                resolved = parts[1].strip()
+                COMMON_NAMES[clean_code] = resolved
+                return resolved
+    except Exception:
+        pass
+        
+    return fallback_name or clean_code
 
 
 def get_market_prefix(code: str) -> str:
@@ -112,7 +147,7 @@ def fetch_from_yfinance(code: str, start_date: str = "2020-01-01", end_date: Opt
                 df[col] = 0.0
         df = df[cols].sort_values('date').reset_index(drop=True)
         
-        name = COMMON_NAMES.get(clean_code, f"{clean_code}")
+        name = resolve_stock_name(clean_code)
         df.attrs['stock_name'] = name
         df.attrs['stock_code'] = clean_code
         return df
@@ -221,7 +256,7 @@ def fetch_from_akshare(code: str, start_date: str = "2020-01-01", end_date: str 
         df['date'] = pd.to_datetime(df['date'])
         df = df[['date', 'open', 'high', 'low', 'close', 'volume', 'turnover', 'pct_change']]
         df = df.sort_values('date').reset_index(drop=True)
-        df.attrs['stock_name'] = COMMON_NAMES.get(clean_code, clean_code)
+        df.attrs['stock_name'] = resolve_stock_name(clean_code)
         df.attrs['stock_code'] = clean_code
         return df
     except Exception:
@@ -231,7 +266,7 @@ def fetch_from_akshare(code: str, start_date: str = "2020-01-01", end_date: str 
 def generate_synthetic_data(code: str = "510300", name: Optional[str] = None, days: int = 750) -> pd.DataFrame:
     """Generate realistic price series for fallback validation."""
     clean_code = "".join(filter(str.isdigit, code)) or "510300"
-    stock_name = name or COMMON_NAMES.get(clean_code, f"{clean_code}模拟")
+    stock_name = name or resolve_stock_name(clean_code, f"{clean_code}模拟")
     
     np.random.seed(int(clean_code) % 100000)
     end_dt = datetime.now()
@@ -315,7 +350,7 @@ def load_stock_data(
                 df = df[(df['date'] >= pd.to_datetime(start_date)) & (df['date'] <= pd.to_datetime(end_date))]
                 if len(df) > 30:
                     df = df.sort_values('date').reset_index(drop=True)
-                    df.attrs['stock_name'] = COMMON_NAMES.get(clean_code, clean_code)
+                    df.attrs['stock_name'] = resolve_stock_name(clean_code)
                     df.attrs['stock_code'] = clean_code
                     return df
         except Exception:
@@ -346,11 +381,11 @@ def load_stock_data(
             df = pd.read_csv(cache_file)
             df['date'] = pd.to_datetime(df['date'])
             df = df.sort_values('date').reset_index(drop=True)
-            df.attrs['stock_name'] = COMMON_NAMES.get(clean_code, clean_code)
+            df.attrs['stock_name'] = resolve_stock_name(clean_code)
             df.attrs['stock_code'] = clean_code
             return df
         except Exception:
             pass
             
     # 7. Fallback to synthetic data
-    return generate_synthetic_data(code=clean_code)
+    return generate_synthetic_data(code=clean_code, name=resolve_stock_name(clean_code))

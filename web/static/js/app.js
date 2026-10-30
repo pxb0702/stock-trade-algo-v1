@@ -1,15 +1,18 @@
 /**
- * Stock Trade Algo v2 - Frontend JavaScript
- * ECharts Candlestick, MACD, Equity Curve and Dynamic Dual-Regime Backtesting Controller
+ * Stock Trade Algo v2.1 - Frontend JavaScript
+ * ECharts Candlestick, MACD, Equity Curve, Dynamic Dual-Regime Backtesting Controller,
+ * and Persistent Watchlist Management (Add/Remove Stocks)
  */
 
 let klineChart = null;
 let equityChart = null;
 let currentData = null;
+let currentWatchlist = [];
 
 document.addEventListener("DOMContentLoaded", () => {
     initCharts();
     initEventListeners();
+    initWatchlistHandlers();
     // Auto run first backtest on load for 平安银行 (000001)
     runBacktest();
 });
@@ -29,6 +32,28 @@ function initCharts() {
         if (klineChart) klineChart.resize();
         if (equityChart) equityChart.resize();
     });
+}
+
+function showToast(message, type = 'info', duration = 3200) {
+    const container = document.getElementById("toastContainer");
+    if (!container) return;
+
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    
+    let icon = '<i class="fa-solid fa-circle-info"></i>';
+    if (type === 'success') icon = '<i class="fa-solid fa-circle-check"></i>';
+    if (type === 'error') icon = '<i class="fa-solid fa-circle-exclamation"></i>';
+
+    toast.innerHTML = `${icon} <span>${message}</span>`;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.25s ease';
+        setTimeout(() => toast.remove(), 250);
+    }, duration);
 }
 
 function initEventListeners() {
@@ -77,21 +102,6 @@ function initEventListeners() {
         });
     });
 
-    // Watchlist fast switcher
-    const watchlistBtns = document.querySelectorAll(".watchlist-btn");
-    watchlistBtns.forEach(btn => {
-        btn.addEventListener("click", () => {
-            watchlistBtns.forEach(b => b.classList.remove("active"));
-            btn.classList.add("active");
-            const code = btn.getAttribute("data-code");
-            const input = document.getElementById("stockCode");
-            if (input) {
-                input.value = code;
-                runBacktest();
-            }
-        });
-    });
-
     // Form submit
     const form = document.getElementById("backtestForm");
     if (form) {
@@ -100,6 +110,312 @@ function initEventListeners() {
             runBacktest();
         });
     }
+
+    // Sidebar stockCode input live resolver
+    const stockInput = document.getElementById("stockCode");
+    let resolveTimer = null;
+    if (stockInput) {
+        stockInput.addEventListener("input", (e) => {
+            clearTimeout(resolveTimer);
+            const val = e.target.value.trim();
+            if (val.length >= 6) {
+                resolveTimer = setTimeout(async () => {
+                    try {
+                        const res = await fetch(`/api/stock/resolve?code=${encodeURIComponent(val)}`);
+                        const d = await res.json();
+                        if (d.success && d.name) {
+                            const badge = document.getElementById("currentStockName");
+                            if (badge) badge.textContent = d.name;
+                        }
+                    } catch (err) {}
+                }, 250);
+            }
+        });
+    }
+}
+
+// ----------------------------------------------------
+// Watchlist Management (Add, Delete, Resolve, Render)
+// ----------------------------------------------------
+function initWatchlistHandlers() {
+    bindWatchlistPillClicks();
+
+    // Modal controls
+    const openBtn = document.getElementById("openAddModalBtn");
+    const closeBtn = document.getElementById("closeAddModalBtn");
+    const cancelBtn = document.getElementById("cancelAddModalBtn");
+    const modal = document.getElementById("addStockModal");
+    const addForm = document.getElementById("addStockForm");
+    const modalCodeInput = document.getElementById("modalStockCode");
+    const modalNameInput = document.getElementById("modalStockName");
+    const modalBadge = document.getElementById("modalResolvedBadge");
+
+    function openModal() {
+        if (!modal) return;
+        modal.style.display = "flex";
+        if (modalCodeInput) {
+            modalCodeInput.value = "";
+            modalCodeInput.focus();
+        }
+        if (modalNameInput) modalNameInput.value = "";
+        if (modalBadge) modalBadge.textContent = "输入后自动解析";
+    }
+
+    function closeModal() {
+        if (!modal) return;
+        modal.style.display = "none";
+    }
+
+    if (openBtn) openBtn.addEventListener("click", openModal);
+    if (closeBtn) closeBtn.addEventListener("click", closeModal);
+    if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
+    if (modal) {
+        modal.addEventListener("click", (e) => {
+            if (e.target === modal) closeModal();
+        });
+    }
+
+    // Modal code input auto resolve
+    let modalResolveTimer = null;
+    if (modalCodeInput) {
+        modalCodeInput.addEventListener("input", (e) => {
+            clearTimeout(modalResolveTimer);
+            const code = e.target.value.trim();
+            if (code.length >= 5) {
+                if (modalBadge) modalBadge.textContent = "查询中...";
+                modalResolveTimer = setTimeout(async () => {
+                    try {
+                        const res = await fetch(`/api/stock/resolve?code=${encodeURIComponent(code)}`);
+                        const d = await res.json();
+                        if (d.success && d.name) {
+                            if (modalBadge) modalBadge.textContent = d.name;
+                            if (modalNameInput && !modalNameInput.value) {
+                                modalNameInput.value = d.name;
+                            }
+                        } else {
+                            if (modalBadge) modalBadge.textContent = "未识别名称";
+                        }
+                    } catch (err) {
+                        if (modalBadge) modalBadge.textContent = "解析异常";
+                    }
+                }, 200);
+            } else {
+                if (modalBadge) modalBadge.textContent = "输入后自动解析";
+            }
+        });
+    }
+
+    // Modal suggestion tags
+    const suggestTags = document.querySelectorAll(".btn-tag");
+    suggestTags.forEach(tag => {
+        tag.addEventListener("click", () => {
+            const code = tag.getAttribute("data-code");
+            const name = tag.getAttribute("data-name");
+            if (modalCodeInput) modalCodeInput.value = code;
+            if (modalNameInput) modalNameInput.value = name;
+            if (modalBadge) modalBadge.textContent = name;
+        });
+    });
+
+    // Form submit: Add Stock
+    if (addForm) {
+        addForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const code = document.getElementById("modalStockCode").value.trim();
+            const name = document.getElementById("modalStockName").value.trim();
+            const desc = document.getElementById("modalStockDesc") ? document.getElementById("modalStockDesc").value.trim() : "";
+
+            if (!code) return;
+
+            const submitBtn = document.getElementById("confirmAddStockBtn");
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 添加中...';
+            }
+
+            try {
+                const res = await fetch("/api/watchlist/add", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ code, name, desc })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast(d.message || "添加成功", "success");
+                    closeModal();
+                    renderWatchlist(d.watchlist, code);
+                    // Set current stock and run backtest immediately
+                    const stockInput = document.getElementById("stockCode");
+                    if (stockInput) stockInput.value = code;
+                    runBacktest();
+                } else {
+                    showToast(d.message || "添加失败", "error");
+                }
+            } catch (err) {
+                showToast(`添加请求异常: ${err.message}`, "error");
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fa-solid fa-check"></i> 保存并添加到自选';
+                }
+            }
+        });
+    }
+
+    // Reset Watchlist Button
+    const resetBtn = document.getElementById("resetWatchlistBtn");
+    if (resetBtn) {
+        resetBtn.addEventListener("click", async () => {
+            if (!confirm("确定要恢复默认的自选股列表吗？自定义添加的股票将被重置。")) return;
+            try {
+                const res = await fetch("/api/watchlist/reset", { method: "POST" });
+                const d = await res.json();
+                if (d.success) {
+                    showToast("已成功重置为默认自选股票池", "success");
+                    renderWatchlist(d.watchlist, "000001");
+                }
+            } catch (err) {
+                showToast(`重置失败: ${err.message}`, "error");
+            }
+        });
+    }
+
+    // Sidebar quick add button
+    const sidebarAddBtn = document.getElementById("sidebarAddWatchlistBtn");
+    if (sidebarAddBtn) {
+        sidebarAddBtn.addEventListener("click", async () => {
+            const codeInput = document.getElementById("stockCode");
+            const code = codeInput ? codeInput.value.trim() : "";
+            const nameBadge = document.getElementById("currentStockName");
+            const name = nameBadge ? nameBadge.textContent.trim() : "";
+
+            if (!code) {
+                showToast("请输入标的代码", "error");
+                return;
+            }
+
+            try {
+                const res = await fetch("/api/watchlist/add", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ code, name })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast(d.message || "已添加到自选", "success");
+                    renderWatchlist(d.watchlist, code);
+                } else {
+                    showToast(d.message || "添加失败", "info");
+                }
+            } catch (err) {
+                showToast(`操作异常: ${err.message}`, "error");
+            }
+        });
+    }
+
+    // Sidebar quick remove button
+    const sidebarRemoveBtn = document.getElementById("sidebarRemoveWatchlistBtn");
+    if (sidebarRemoveBtn) {
+        sidebarRemoveBtn.addEventListener("click", async () => {
+            const codeInput = document.getElementById("stockCode");
+            const code = codeInput ? codeInput.value.trim() : "";
+            if (!code) return;
+            if (!confirm(`确定将标的 ${code} 移出自选列表吗？`)) return;
+
+            try {
+                const res = await fetch("/api/watchlist/delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ code })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    showToast(d.message || "已移出自选", "success");
+                    renderWatchlist(d.watchlist);
+                } else {
+                    showToast(d.message || "移除失败", "error");
+                }
+            } catch (err) {
+                showToast(`移除异常: ${err.message}`, "error");
+            }
+        });
+    }
+}
+
+function bindWatchlistPillClicks() {
+    const container = document.getElementById("watchlistContainer");
+    if (!container) return;
+
+    // Select pill
+    const pills = container.querySelectorAll(".watchlist-pill");
+    pills.forEach(pill => {
+        const selectBtn = pill.querySelector(".pill-select-btn");
+        const delBtn = pill.querySelector(".pill-del-btn");
+        const code = pill.getAttribute("data-code");
+
+        if (selectBtn) {
+            selectBtn.addEventListener("click", () => {
+                pills.forEach(p => p.classList.remove("active"));
+                pill.classList.add("active");
+                const stockInput = document.getElementById("stockCode");
+                if (stockInput) {
+                    stockInput.value = code;
+                    runBacktest();
+                }
+            });
+        }
+
+        if (delBtn) {
+            delBtn.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                const stockName = selectBtn ? selectBtn.querySelector(".name").textContent : code;
+                if (!confirm(`确定将 ${stockName} (${code}) 从自选列表删除吗？`)) return;
+
+                try {
+                    const res = await fetch("/api/watchlist/delete", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ code })
+                    });
+                    const d = await res.json();
+                    if (d.success) {
+                        showToast(`已删除 ${stockName}`, "success");
+                        renderWatchlist(d.watchlist);
+                    } else {
+                        showToast(d.message || "删除失败", "error");
+                    }
+                } catch (err) {
+                    showToast(`删除异常: ${err.message}`, "error");
+                }
+            });
+        }
+    });
+}
+
+function renderWatchlist(watchlist, activeCode = null) {
+    const container = document.getElementById("watchlistContainer");
+    if (!container || !watchlist) return;
+
+    const currentCode = activeCode || (document.getElementById("stockCode") ? document.getElementById("stockCode").value.trim() : "");
+
+    let html = "";
+    watchlist.forEach((item) => {
+        const isActive = item.code === currentCode;
+        html += `
+            <div class="watchlist-pill ${isActive ? 'active' : ''}" data-code="${item.code}">
+                <button class="pill-select-btn" type="button" title="${item.desc || item.name}">
+                    <span class="code">${item.code}</span>
+                    <span class="name">${item.name}</span>
+                </button>
+                <button class="pill-del-btn" type="button" title="从自选列表移除 ${item.name}" data-code="${item.code}">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+    bindWatchlistPillClicks();
 }
 
 async function runBacktest() {
@@ -114,10 +430,75 @@ async function runBacktest() {
     const enableRegime = document.getElementById("enableRegime") ? document.getElementById("enableRegime").checked : true;
     const enableOversold = document.getElementById("enableOversold") ? document.getElementById("enableOversold").checked : true;
 
+    // Highlight current active pill
+    const pills = document.querySelectorAll(".watchlist-pill");
+    pills.forEach(p => {
+        if (p.getAttribute("data-code") === code) {
+            p.classList.add("active");
+        } else {
+            p.classList.remove("active");
+        }
+    });
+
     if (submitBtn) {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 回测计算中...';
     }
+
+    try {
+        const response = await fetch("/api/backtest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                code: code,
+                start_date: startDate,
+                end_date: endDate,
+                initial_cash: initialCash,
+                take_profit_pct: tpPct,
+                stop_loss_pct: slPct,
+                atr_multiplier: atrMultiplier,
+                enable_regime_filter: enableRegime,
+                enable_oversold_swing: enableOversold,
+                position_pct: 0.95
+            })
+        });
+
+        const data = await response.json();
+        if (!data.success) {
+            showToast(`回测失败: ${data.error || "未知错误"}`, "error");
+            return;
+        }
+
+        currentData = data;
+
+        // 1. Update Stock Badge
+        const nameBadge = document.getElementById("currentStockName");
+        if (nameBadge) {
+            nameBadge.textContent = data.stock_name || code;
+        }
+
+        // 2. Update Metrics
+        renderMetrics(data.metrics);
+
+        // 3. Render K-Line Chart
+        renderKlineChart(data.chart_data, data.stock_name, data.stock_code);
+
+        // 4. Render Equity Curve
+        renderEquityChart(data.equity_data);
+
+        // 5. Render Trade Table
+        renderTradesTable(data.trade_logs);
+
+    } catch (err) {
+        console.error("Backtest request error:", err);
+        showToast(`请求发生异常: ${err.message}`, "error");
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 运行 v2 优化回测';
+        }
+    }
+}
 
     try {
         const response = await fetch("/api/backtest", {

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stock Trade Algo v2 - A股自适应量化交易系统 (平安银行实证)</title>
+    <title>Stock Trade Algo v2.1 - A股自适应量化交易终端 (自选股动态管理)</title>
     <!-- Google Fonts & FontAwesome -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -19,19 +19,34 @@
             <div class="brand">
                 <div class="logo-icon"><i class="fa-solid fa-chart-line"></i></div>
                 <div>
-                    <h1 class="logo-title">STOCK TRADE ALGO <span class="badge-version">v2.0 双模自适应</span></h1>
+                    <h1 class="logo-title">STOCK TRADE ALGO <span class="badge-version">v2.1 自选股动态管理</span></h1>
                     <p class="logo-subtitle">China A-Shares Quant Engine (Dual-Regime Trend Momentum + Oversold Swing Reversal)</p>
                 </div>
             </div>
 
-            <!-- Quick Watchlist Buttons -->
-            <div class="quick-watchlist" id="watchlistContainer">
-                {% for item in watchlist %}
-                <button class="watchlist-btn {% if loop.first %}active{% endif %}" data-code="{{ item.code }}">
-                    <span class="code">{{ item.code }}</span>
-                    <span class="name">{{ item.name }}</span>
-                </button>
-                {% endfor %}
+            <!-- Quick Watchlist Container & Actions -->
+            <div class="watchlist-section">
+                <div class="quick-watchlist" id="watchlistContainer">
+                    {% for item in watchlist %}
+                    <div class="watchlist-pill {% if loop.first %}active{% endif %}" data-code="{{ item.code }}">
+                        <button class="pill-select-btn" type="button" title="{{ item.desc or item.name }}">
+                            <span class="code">{{ item.code }}</span>
+                            <span class="name">{{ item.name }}</span>
+                        </button>
+                        <button class="pill-del-btn" type="button" title="从自选列表移除 {{ item.name }}" data-code="{{ item.code }}">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="watchlist-actions">
+                    <button class="btn-add-stock-pill" id="openAddModalBtn" type="button" title="添加新的股票或ETF到自选">
+                        <i class="fa-solid fa-plus"></i> 添加自选
+                    </button>
+                    <button class="btn-reset-pills" id="resetWatchlistBtn" type="button" title="恢复默认自选股票池">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                </div>
             </div>
 
             <div class="nav-actions">
@@ -53,8 +68,16 @@
                     <div class="form-group">
                         <label for="stockCode"><i class="fa-solid fa-magnifying-glass"></i> 标的代码 (A股/ETF)</label>
                         <div class="input-with-action">
-                            <input type="text" id="stockCode" name="code" value="000001" placeholder="如 000001, 510300">
+                            <input type="text" id="stockCode" name="code" value="000001" placeholder="如 000001, 600036">
                             <span class="stock-badge" id="currentStockName">平安银行</span>
+                        </div>
+                        <div class="stock-input-toolbar">
+                            <button type="button" id="sidebarAddWatchlistBtn" class="btn-subaction" title="将当前输入的标的加入自选列表">
+                                <i class="fa-solid fa-star"></i> 加入自选
+                            </button>
+                            <button type="button" id="sidebarRemoveWatchlistBtn" class="btn-subaction danger" title="从自选列表移除当前标的">
+                                <i class="fa-regular fa-trash-can"></i> 移出自选
+                            </button>
                         </div>
                     </div>
 
@@ -241,6 +264,54 @@
             </main>
         </div>
     </div>
+
+    <!-- Modal: Add Stock to Watchlist -->
+    <div class="modal-overlay" id="addStockModal" style="display: none;">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-folder-plus"></i> 添加自选股票 / ETF</h3>
+                <button class="modal-close-btn" id="closeAddModalBtn" type="button"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="addStockForm" class="modal-form">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="modalStockCode"><i class="fa-solid fa-barcode"></i> 证券代码 (A股 / ETF 6位代码)</label>
+                        <div class="input-with-action">
+                            <input type="text" id="modalStockCode" maxlength="6" placeholder="如 600036, 000333, 510500" required autocomplete="off">
+                            <span class="stock-badge" id="modalResolvedBadge">输入后自动解析</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="modalStockName"><i class="fa-solid fa-tag"></i> 标的名称 (支持自动识别或自定义)</label>
+                        <input type="text" id="modalStockName" placeholder="自动解析中..." required>
+                    </div>
+                    <div class="form-group">
+                        <label for="modalStockDesc"><i class="fa-regular fa-comment-dots"></i> 策略备注 (可选)</label>
+                        <input type="text" id="modalStockDesc" placeholder="如：核心资产、银行龙头、消费高股息等">
+                    </div>
+
+                    <div class="suggest-section">
+                        <span class="suggest-label"><i class="fa-solid fa-fire"></i> 快捷热门添加：</span>
+                        <div class="suggest-tags">
+                            <button type="button" class="btn-tag" data-code="600036" data-name="招商银行">600036 招商银行</button>
+                            <button type="button" class="btn-tag" data-code="000333" data-name="美的集团">000333 美的集团</button>
+                            <button type="button" class="btn-tag" data-code="601899" data-name="紫金矿业">601899 紫金矿业</button>
+                            <button type="button" class="btn-tag" data-code="510500" data-name="中证500ETF">510500 中证500</button>
+                            <button type="button" class="btn-tag" data-code="588000" data-name="科创50ETF">588000 科创50</button>
+                            <button type="button" class="btn-tag" data-code="600900" data-name="长江电力">600900 长江电力</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="cancelAddModalBtn">取消</button>
+                    <button type="submit" class="btn-primary" id="confirmAddStockBtn"><i class="fa-solid fa-check"></i> 保存并添加到自选</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
 
     <!-- Scripts -->
     <script src="/static/js/app.js"></script>

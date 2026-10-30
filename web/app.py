@@ -25,11 +25,18 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from config import TradingConfig, DEFAULT_WATCHLIST
-from core.data_feed import load_stock_data, COMMON_NAMES
+from core.data_feed import load_stock_data, COMMON_NAMES, resolve_stock_name
 from core.indicators import add_all_indicators
 from core.strategy import DualRegimeAdaptiveStrategy
 from core.engine import BacktestEngine
 from core.metrics import calculate_performance_metrics
+from core.watchlist import (
+    load_watchlist,
+    save_watchlist,
+    add_stock_to_watchlist,
+    remove_stock_from_watchlist,
+    reset_watchlist_to_default
+)
 
 app = Flask(
     __name__,
@@ -40,12 +47,65 @@ app = Flask(
 
 @app.route("/")
 def index():
-    return render_template("index.html", watchlist=DEFAULT_WATCHLIST)
+    return render_template("index.html", watchlist=load_watchlist())
 
 
 @app.route("/api/watchlist", methods=["GET"])
 def get_watchlist():
-    return jsonify({"success": True, "watchlist": DEFAULT_WATCHLIST})
+    return jsonify({"success": True, "watchlist": load_watchlist()})
+
+
+@app.route("/api/watchlist/add", methods=["POST"])
+def add_watchlist_api():
+    try:
+        data = request.get_json() or {}
+        code = str(data.get("code", "")).strip()
+        name = str(data.get("name", "")).strip() or None
+        desc = str(data.get("desc", "")).strip()
+        success, msg, item = add_stock_to_watchlist(code, name, desc)
+        return jsonify({
+            "success": success,
+            "message": msg,
+            "item": item,
+            "watchlist": load_watchlist()
+        }), (200 if success else 400)
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/watchlist/delete", methods=["POST"])
+def delete_watchlist_api():
+    try:
+        data = request.get_json() or {}
+        code = str(data.get("code", "")).strip()
+        success, msg = remove_stock_from_watchlist(code)
+        return jsonify({
+            "success": success,
+            "message": msg,
+            "watchlist": load_watchlist()
+        }), (200 if success else 400)
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/watchlist/reset", methods=["POST"])
+def reset_watchlist_api():
+    try:
+        items = reset_watchlist_to_default()
+        return jsonify({
+            "success": True,
+            "message": "已成功重置为默认自选股列表",
+            "watchlist": items
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/stock/resolve", methods=["GET"])
+def resolve_stock_api():
+    code = request.args.get("code", "").strip()
+    name = resolve_stock_name(code)
+    return jsonify({"success": True, "code": code, "name": name})
 
 
 @app.route("/api/backtest", methods=["POST"])

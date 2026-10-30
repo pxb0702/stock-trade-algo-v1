@@ -331,7 +331,14 @@ function initWatchlistHandlers() {
                 const d = await res.json();
                 if (d.success) {
                     showToast(d.message || "已移出自选", "success");
-                    renderWatchlist(d.watchlist);
+                    if (codeInput && codeInput.value === code && d.watchlist && d.watchlist.length > 0) {
+                        const nextCode = d.watchlist[0].code;
+                        codeInput.value = nextCode;
+                        renderWatchlist(d.watchlist, nextCode);
+                        runBacktest();
+                    } else {
+                        renderWatchlist(d.watchlist);
+                    }
                 } else {
                     showToast(d.message || "移除失败", "error");
                 }
@@ -349,26 +356,27 @@ function bindWatchlistPillClicks() {
     // Select pill
     const pills = container.querySelectorAll(".watchlist-pill");
     pills.forEach(pill => {
-        const selectBtn = pill.querySelector(".pill-select-btn");
         const delBtn = pill.querySelector(".pill-del-btn");
         const code = pill.getAttribute("data-code");
+        const nameEl = pill.querySelector(".name");
+        const stockName = nameEl ? nameEl.textContent.trim() : code;
 
-        if (selectBtn) {
-            selectBtn.addEventListener("click", () => {
-                pills.forEach(p => p.classList.remove("active"));
-                pill.classList.add("active");
-                const stockInput = document.getElementById("stockCode");
-                if (stockInput) {
-                    stockInput.value = code;
-                    runBacktest();
-                }
-            });
-        }
+        // Click anywhere on pill (except delete icon) to select & trigger backtest
+        pill.addEventListener("click", (e) => {
+            if (e.target.closest(".pill-del-btn")) return;
+            pills.forEach(p => p.classList.remove("active"));
+            pill.classList.add("active");
+            const stockInput = document.getElementById("stockCode");
+            if (stockInput) {
+                stockInput.value = code;
+                runBacktest();
+            }
+        });
 
         if (delBtn) {
             delBtn.addEventListener("click", async (e) => {
+                e.preventDefault();
                 e.stopPropagation();
-                const stockName = selectBtn ? selectBtn.querySelector(".name").textContent : code;
                 if (!confirm(`确定将 ${stockName} (${code}) 从自选列表删除吗？`)) return;
 
                 try {
@@ -380,7 +388,15 @@ function bindWatchlistPillClicks() {
                     const d = await res.json();
                     if (d.success) {
                         showToast(`已删除 ${stockName}`, "success");
-                        renderWatchlist(d.watchlist);
+                        const stockInput = document.getElementById("stockCode");
+                        if (stockInput && stockInput.value === code && d.watchlist && d.watchlist.length > 0) {
+                            const nextCode = d.watchlist[0].code;
+                            stockInput.value = nextCode;
+                            renderWatchlist(d.watchlist, nextCode);
+                            runBacktest();
+                        } else {
+                            renderWatchlist(d.watchlist);
+                        }
                     } else {
                         showToast(d.message || "删除失败", "error");
                     }
@@ -492,61 +508,6 @@ async function runBacktest() {
     } catch (err) {
         console.error("Backtest request error:", err);
         showToast(`请求发生异常: ${err.message}`, "error");
-    } finally {
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fa-solid fa-play"></i> 运行 v2 优化回测';
-        }
-    }
-}
-
-    try {
-        const response = await fetch("/api/backtest", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                code: code,
-                start_date: startDate,
-                end_date: endDate,
-                initial_cash: initialCash,
-                take_profit_pct: tpPct,
-                stop_loss_pct: slPct,
-                atr_multiplier: atrMultiplier,
-                enable_regime_filter: enableRegime,
-                enable_oversold_swing: enableOversold,
-                position_pct: 0.95
-            })
-        });
-
-        const data = await response.json();
-        if (!data.success) {
-            alert(`回测失败: ${data.error || "未知错误"}`);
-            return;
-        }
-
-        currentData = data;
-
-        // 1. Update Stock Badge
-        const nameBadge = document.getElementById("currentStockName");
-        if (nameBadge) {
-            nameBadge.textContent = data.stock_name || code;
-        }
-
-        // 2. Update Metrics
-        renderMetrics(data.metrics);
-
-        // 3. Render K-Line Chart
-        renderKlineChart(data.chart_data, data.stock_name, data.stock_code);
-
-        // 4. Render Equity Curve
-        renderEquityChart(data.equity_data);
-
-        // 5. Render Trade Table
-        renderTradesTable(data.trade_logs);
-
-    } catch (err) {
-        console.error("Backtest request error:", err);
-        alert(`请求发生异常: ${err.message}`);
     } finally {
         if (submitBtn) {
             submitBtn.disabled = false;

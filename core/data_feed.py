@@ -46,20 +46,36 @@ COMMON_NAMES: Dict[str, str] = {
 }
 
 
+def is_valid_chinese_name(name: Optional[str]) -> bool:
+    """Validate if a string is a genuine Chinese stock/ETF name."""
+    if not name or not isinstance(name, str):
+        return False
+    clean = name.strip()
+    if not clean or clean.isdigit() or len(clean) < 2:
+        return False
+    # Must have at least one Chinese character
+    return any('\u4e00' <= char <= '\u9fff' for char in clean)
+
+
 def resolve_stock_name(code: str, fallback_name: Optional[str] = None) -> str:
     """
     Resolve real Chinese stock/ETF name dynamically.
     Priority:
     1. Known directory in COMMON_NAMES
     2. Tencent live quote API (fastest, lightweight)
-    3. Fallback name or code
+    3. EastMoney quote API
+    4. Fallback name if valid Chinese name
     """
     clean_code = "".join(filter(str.isdigit, str(code)))
-    if not clean_code:
-        return fallback_name or str(code)
+    if not clean_code or len(clean_code) != 6:
+        if fallback_name and is_valid_chinese_name(fallback_name):
+            return fallback_name
+        return ""
+
     if clean_code in COMMON_NAMES:
         return COMMON_NAMES[clean_code]
         
+    # 1. Tencent live quote API
     prefix = get_market_prefix(clean_code)
     url = f"http://qt.gtimg.cn/q={prefix}{clean_code}"
     try:
@@ -69,12 +85,30 @@ def resolve_stock_name(code: str, fallback_name: Optional[str] = None) -> str:
             parts = content.split("~")
             if len(parts) > 2 and parts[1].strip():
                 resolved = parts[1].strip()
-                COMMON_NAMES[clean_code] = resolved
-                return resolved
+                if is_valid_chinese_name(resolved):
+                    COMMON_NAMES[clean_code] = resolved
+                    return resolved
+    except Exception:
+        pass
+
+    # 2. EastMoney quote API
+    try:
+        secid = get_secid(clean_code)
+        em_url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields=f58"
+        req = urllib.request.Request(em_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if data and data.get("data") and data["data"].get("f58"):
+                resolved = str(data["data"]["f58"]).strip()
+                if is_valid_chinese_name(resolved):
+                    COMMON_NAMES[clean_code] = resolved
+                    return resolved
     except Exception:
         pass
         
-    return fallback_name or clean_code
+    if fallback_name and is_valid_chinese_name(fallback_name):
+        return fallback_name
+    return ""
 
 
 def get_market_prefix(code: str) -> str:

@@ -6,12 +6,6 @@
     "desc": "Ping An Bank (Commercial Banking Leader)"
   },
   {
-    "code": "510300",
-    "name": "沪深300ETF",
-    "market": "SH",
-    "desc": "CSI 300 Index ETF (Broad Market)"
-  },
-  {
     "code": "600519",
     "name": "贵州茅台",
     "market": "SH",
@@ -30,21 +24,15 @@
     "desc": "CATL (Lithium Battery Leader)"
   },
   {
-    "code": "601318",
-    "name": "中国平安",
+    "code": "600036",
+    "name": "招商银行",
     "market": "SH",
-    "desc": "Ping An Insurance (Financials)"
+    "desc": "A股 招商银行 (600036)"
   },
   {
-    "code": "512880",
-    "name": "证券ETF",
+    "code": "510500",
+    "name": "中证500ETF",
     "market": "SH",
-    "desc": "Securities Sector ETF (High Beta)"
-  },
-  {
-    "code": "159915",
-    "name": "创业板ETF",
-    "market": "SZ",
-    "desc": "ChiNext Index ETF (Tech Growth)"
+    "desc": "A股 中证500ETF (510500)"
   }
 ]

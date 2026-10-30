@@ -104,8 +104,23 @@ def reset_watchlist_api():
 @app.route("/api/stock/resolve", methods=["GET"])
 def resolve_stock_api():
     code = request.args.get("code", "").strip()
-    name = resolve_stock_name(code)
-    return jsonify({"success": True, "code": code, "name": name})
+    clean_code = "".join(filter(str.isdigit, str(code)))
+    if len(clean_code) != 6:
+        return jsonify({
+            "success": False,
+            "code": code,
+            "name": "",
+            "message": "请输入6位A股或ETF代码"
+        }), 400
+    name = resolve_stock_name(clean_code)
+    if not name or name.startswith("标的 "):
+        return jsonify({
+            "success": False,
+            "code": clean_code,
+            "name": "",
+            "message": "未能自动识别该代码的证券名称"
+        }), 404
+    return jsonify({"success": True, "code": clean_code, "name": name})
 
 
 @app.route("/api/backtest", methods=["POST"])

@@ -117,18 +117,23 @@ function initEventListeners() {
     if (stockInput) {
         stockInput.addEventListener("input", (e) => {
             clearTimeout(resolveTimer);
-            const val = e.target.value.trim();
-            if (val.length >= 6) {
+            const val = e.target.value.trim().replace(/\D/g, "");
+            const badge = document.getElementById("currentStockName");
+            if (val.length === 6) {
+                if (badge) badge.textContent = "解析中...";
                 resolveTimer = setTimeout(async () => {
                     try {
                         const res = await fetch(`/api/stock/resolve?code=${encodeURIComponent(val)}`);
                         const d = await res.json();
                         if (d.success && d.name) {
-                            const badge = document.getElementById("currentStockName");
                             if (badge) badge.textContent = d.name;
+                        } else {
+                            if (badge) badge.textContent = `A股 ${val}`;
                         }
                     } catch (err) {}
-                }, 250);
+                }, 150);
+            } else if (val.length < 6) {
+                if (badge) badge.textContent = val.length === 0 ? "请输入6位代码" : `${val.length}/6 位...`;
             }
         });
     }
@@ -157,8 +162,13 @@ function initWatchlistHandlers() {
             modalCodeInput.value = "";
             modalCodeInput.focus();
         }
-        if (modalNameInput) modalNameInput.value = "";
-        if (modalBadge) modalBadge.textContent = "输入后自动解析";
+        if (modalNameInput) {
+            modalNameInput.value = "";
+            modalNameInput.placeholder = "输入6位代码后自动解析";
+        }
+        const descInput = document.getElementById("modalStockDesc");
+        if (descInput) descInput.value = "";
+        if (modalBadge) modalBadge.textContent = "输入6位代码后自动解析";
     }
 
     function closeModal() {
@@ -180,27 +190,38 @@ function initWatchlistHandlers() {
     if (modalCodeInput) {
         modalCodeInput.addEventListener("input", (e) => {
             clearTimeout(modalResolveTimer);
-            const code = e.target.value.trim();
-            if (code.length >= 5) {
-                if (modalBadge) modalBadge.textContent = "查询中...";
+            const code = e.target.value.trim().replace(/\D/g, "");
+            
+            if (code.length < 6) {
+                if (modalBadge) modalBadge.textContent = code.length === 0 ? "输入6位代码后自动解析" : `已输入 ${code.length}/6 位...`;
+                if (modalNameInput) {
+                    modalNameInput.value = "";
+                    modalNameInput.placeholder = "等待输入完整6位代码...";
+                }
+                return;
+            }
+
+            if (code.length === 6) {
+                if (modalBadge) modalBadge.textContent = "正在实时解析名称...";
+                if (modalNameInput) modalNameInput.placeholder = "正在查询官方证券名称...";
                 modalResolveTimer = setTimeout(async () => {
                     try {
                         const res = await fetch(`/api/stock/resolve?code=${encodeURIComponent(code)}`);
                         const d = await res.json();
                         if (d.success && d.name) {
                             if (modalBadge) modalBadge.textContent = d.name;
-                            if (modalNameInput && !modalNameInput.value) {
-                                modalNameInput.value = d.name;
-                            }
+                            if (modalNameInput) modalNameInput.value = d.name;
                         } else {
-                            if (modalBadge) modalBadge.textContent = "未识别名称";
+                            if (modalBadge) modalBadge.textContent = "未自动识别 (可手动输入)";
+                            if (modalNameInput) {
+                                modalNameInput.value = "";
+                                modalNameInput.placeholder = "未自动识别，请输入标的名称";
+                            }
                         }
                     } catch (err) {
-                        if (modalBadge) modalBadge.textContent = "解析异常";
+                        if (modalBadge) modalBadge.textContent = "解析异常 (可手动输入)";
                     }
-                }, 200);
-            } else {
-                if (modalBadge) modalBadge.textContent = "输入后自动解析";
+                }, 150);
             }
         });
     }
@@ -221,11 +242,14 @@ function initWatchlistHandlers() {
     if (addForm) {
         addForm.addEventListener("submit", async (e) => {
             e.preventDefault();
-            const code = document.getElementById("modalStockCode").value.trim();
+            const code = document.getElementById("modalStockCode").value.trim().replace(/\D/g, "");
             const name = document.getElementById("modalStockName").value.trim();
             const desc = document.getElementById("modalStockDesc") ? document.getElementById("modalStockDesc").value.trim() : "";
 
-            if (!code) return;
+            if (!code || code.length !== 6) {
+                showToast("请输入完整的6位A股或ETF代码 (如 600036, 510500)", "error");
+                return;
+            }
 
             const submitBtn = document.getElementById("confirmAddStockBtn");
             if (submitBtn) {
@@ -285,13 +309,17 @@ function initWatchlistHandlers() {
     if (sidebarAddBtn) {
         sidebarAddBtn.addEventListener("click", async () => {
             const codeInput = document.getElementById("stockCode");
-            const code = codeInput ? codeInput.value.trim() : "";
-            const nameBadge = document.getElementById("currentStockName");
-            const name = nameBadge ? nameBadge.textContent.trim() : "";
+            const code = codeInput ? codeInput.value.trim().replace(/\D/g, "") : "";
 
-            if (!code) {
-                showToast("请输入标的代码", "error");
+            if (!code || code.length !== 6) {
+                showToast("请输入完整的6位A股或ETF代码", "error");
                 return;
+            }
+
+            // Only send name if it matches the current backtested stock to avoid stale names
+            let name = "";
+            if (currentData && currentData.stock_code === code && currentData.stock_name) {
+                name = currentData.stock_name;
             }
 
             try {

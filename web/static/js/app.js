@@ -623,30 +623,80 @@ function renderKlineChart(chartData, name, code) {
         markData.push({
             name: '买入',
             coord: [b.date, b.price],
-            value: `买入\n¥${b.price}`,
-            symbol: 'triangle',
-            symbolSize: 14,
-            symbolRotate: 0,
-            itemStyle: { color: '#ef4444' }
+            value: `买入\n¥${Number(b.price).toFixed(2)}`,
+            symbol: 'path://M12 2L3 14h6v8h6v-8h6z',
+            symbolSize: [16, 20],
+            symbolOffset: [0, 14],
+            itemStyle: {
+                color: '#ef4444',
+                borderColor: '#fee2e2',
+                borderWidth: 1.5,
+                shadowColor: 'rgba(239, 68, 68, 0.6)',
+                shadowBlur: 6
+            },
+            label: {
+                show: true,
+                position: 'bottom',
+                distance: 5,
+                formatter: `买入 ¥${Number(b.price).toFixed(2)}`,
+                backgroundColor: 'rgba(239, 68, 68, 0.9)',
+                color: '#ffffff',
+                padding: [3, 6],
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 'bold',
+                fontFamily: 'JetBrains Mono'
+            }
         });
     });
 
     chartData.sell_markers.forEach(s => {
         const isProfit = s.pnl >= 0;
+        const color = isProfit ? '#10b981' : '#f59e0b';
         markData.push({
-            name: '平仓',
+            name: '卖出',
             coord: [s.date, s.price],
-            value: `${isProfit ? '+' : ''}${s.return_pct}%\n¥${s.price}`,
-            symbol: 'triangle',
-            symbolSize: 14,
-            symbolRotate: 180,
-            itemStyle: { color: isProfit ? '#f59e0b' : '#10b981' }
+            value: `卖出\n${isProfit ? '+' : ''}${Number(s.return_pct).toFixed(1)}%`,
+            symbol: 'path://M12 22L3 10h6V2h6v8h6z',
+            symbolSize: [16, 20],
+            symbolOffset: [0, -14],
+            itemStyle: {
+                color: color,
+                borderColor: '#ffffff',
+                borderWidth: 1.5,
+                shadowColor: isProfit ? 'rgba(16, 185, 129, 0.6)' : 'rgba(245, 158, 11, 0.6)',
+                shadowBlur: 6
+            },
+            label: {
+                show: true,
+                position: 'top',
+                distance: 5,
+                formatter: `卖出 ${isProfit ? '+' : ''}${Number(s.return_pct).toFixed(1)}%`,
+                backgroundColor: isProfit ? 'rgba(16, 185, 129, 0.95)' : 'rgba(245, 158, 11, 0.95)',
+                color: '#ffffff',
+                padding: [3, 6],
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 'bold',
+                fontFamily: 'JetBrains Mono'
+            }
         });
     });
 
     const option = {
         backgroundColor: '#151a28',
         animation: false,
+        title: {
+            text: '🔴 买入开仓 (Buy)    🟢 卖出平仓 (Sell)',
+            right: 20,
+            top: 7,
+            textStyle: {
+                color: '#cbd5e1',
+                fontSize: 12,
+                fontWeight: '600',
+                fontFamily: 'Plus Jakarta Sans, sans-serif'
+            }
+        },
         legend: {
             data: ['K线', 'EMA快线', 'EMA慢线', 'SMA60牛熊线', '成交量', 'DIF', 'DEA', 'MACD柱'],
             textStyle: { color: '#94a3b8', fontSize: 11 },
@@ -693,12 +743,12 @@ function renderKlineChart(chartData, name, code) {
                 },
                 markPoint: {
                     data: markData,
-                    label: {
+                    tooltip: {
                         show: true,
-                        position: 'top',
-                        fontSize: 9,
-                        color: '#fff',
-                        fontFamily: 'JetBrains Mono'
+                        formatter: function(params) {
+                            return `<div style="font-weight:600;padding:2px;">${params.name}信号: ${params.data.coord[0]}</div>` +
+                                   `<div>价格: ¥${params.data.coord[1]}</div>`;
+                        }
                     }
                 }
             },

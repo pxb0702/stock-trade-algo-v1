@@ -47,7 +47,8 @@ app = Flask(
 
 @app.route("/")
 def index():
-    return render_template("index.html", watchlist=load_watchlist())
+    today_date = datetime.now().strftime("%Y-%m-%d")
+    return render_template("index.html", watchlist=load_watchlist(), today_date=today_date)
 
 
 @app.route("/api/watchlist", methods=["GET"])

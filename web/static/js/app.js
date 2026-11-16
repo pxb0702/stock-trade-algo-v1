@@ -57,6 +57,16 @@ function showToast(message, type = 'info', duration = 3200) {
 }
 
 function initEventListeners() {
+    // Default end date to today if empty or outdated
+    const endDateInput = document.getElementById("endDate");
+    if (endDateInput && (!endDateInput.value || endDateInput.value === "2024-12-31")) {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        endDateInput.value = `${yyyy}-${mm}-${dd}`;
+    }
+
     // Slider value sync
     const tpSlider = document.getElementById("takeProfitPct");
     const tpDisplay = document.getElementById("tpVal");
@@ -465,8 +475,12 @@ function renderWatchlist(watchlist, activeCode = null) {
 async function runBacktest() {
     const submitBtn = document.getElementById("submitBtn");
     const code = document.getElementById("stockCode").value.trim() || "000001";
-    const startDate = document.getElementById("startDate").value;
-    const endDate = document.getElementById("endDate").value;
+    const startDate = document.getElementById("startDate").value || "2021-01-01";
+    let endDate = document.getElementById("endDate").value;
+    if (!endDate) {
+        const today = new Date();
+        endDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    }
     const initialCash = parseFloat(document.getElementById("initialCash").value) || 100000;
     const tpPct = parseFloat(document.getElementById("takeProfitPct").value) || 0.08;
     const slPct = parseFloat(document.getElementById("stopLossPct").value) || 0.03;

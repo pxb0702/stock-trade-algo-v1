@@ -22,17 +22,5 @@
     "name": "宁德时代",
     "market": "SZ",
     "desc": "CATL (Lithium Battery Leader)"
-  },
-  {
-    "code": "600036",
-    "name": "招商银行",
-    "market": "SH",
-    "desc": "A股 招商银行 (600036)"
-  },
-  {
-    "code": "510500",
-    "name": "中证500ETF",
-    "market": "SH",
-    "desc": "A股 中证500ETF (510500)"
   }
 ]

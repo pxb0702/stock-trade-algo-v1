@@ -42,8 +42,64 @@ class TradingConfig:
 
 # Default watchlist for China A-Shares
 DEFAULT_WATCHLIST = [
-    {"code": "000001", "name": "平安银行", "market": "SZ", "desc": "Ping An Bank (Commercial Banking Leader)"},
-    {"code": "600519", "name": "贵州茅台", "market": "SH", "desc": "Kweichow Moutai (Consumer Leader)"},
-    {"code": "002594", "name": "比亚迪", "market": "SZ", "desc": "BYD Company (EV & Battery Leader)"},
-    {"code": "300750", "name": "宁德时代", "market": "SZ", "desc": "CATL (Lithium Battery Leader)"},
+    {
+        "code": "601398",
+        "name": "工商银行",
+        "market": "SH",
+        "desc": "高股息金融 | 分红总额居A股首位，股息率约3.9%，长线资金青睐"
+    },
+    {
+        "code": "600036",
+        "name": "招商银行",
+        "market": "SH",
+        "desc": "股份行龙头 | 股息率约4.79%，兼具高分红与零售银行盈利弹性"
+    },
+    {
+        "code": "600941",
+        "name": "中国移动",
+        "market": "SH",
+        "desc": "通信运营商 | 现金流充沛，股息率超4.6%，受益算力网络与AI政企"
+    },
+    {
+        "code": "601088",
+        "name": "中国神华",
+        "market": "SH",
+        "desc": "煤炭能源龙头 | 股息率接近5%，长协煤占比高，盈利分红稳定性强"
+    },
+    {
+        "code": "600938",
+        "name": "中国海油",
+        "market": "SH",
+        "desc": "石油石化龙头 | 桶油成本控制优异，股息率稳健，高自由现金流"
+    },
+    {
+        "code": "600519",
+        "name": "贵州茅台",
+        "market": "SH",
+        "desc": "白酒消费龙头 | 核心资产代表，分红超350亿，股息率提升至3.7%以上"
+    },
+    {
+        "code": "000333",
+        "name": "美的集团",
+        "market": "SZ",
+        "desc": "白色家电龙头 | 高股息红利与品牌出海双重属性，海外OBM贡献增量"
+    },
+    {
+        "code": "300750",
+        "name": "宁德时代",
+        "market": "SZ",
+        "desc": "新能源电池龙头 | 全球动力与储能绝对龙头，市占率与单位盈利韧性强"
+    },
+    {
+        "code": "300308",
+        "name": "中际旭创",
+        "market": "SZ",
+        "desc": "AI算力光模块 | 全球光模块核心供应商，高速率光模块具备估值弹性"
+    },
+    {
+        "code": "603259",
+        "name": "药明康德",
+        "market": "SH",
+        "desc": "医药CXO龙头 | 研发外包龙头，受益创新药投融资回暖与新质生产力"
+    }
 ]

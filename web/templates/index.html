@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <!-- ECharts CDN -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-    <link rel="stylesheet" href="/static/css/style.css?v=2.1.5">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.1.6">
 </head>
 <body>
     <div class="app-layout">
@@ -68,8 +68,8 @@
                     <div class="form-group">
                         <label for="stockCode"><i class="fa-solid fa-magnifying-glass"></i> 标的代码 (A股/ETF)</label>
                         <div class="input-with-action">
-                            <input type="text" id="stockCode" name="code" value="000001" placeholder="如 000001, 600036">
-                            <span class="stock-badge" id="currentStockName">平安银行</span>
+                            <input type="text" id="stockCode" name="code" value="601398" placeholder="如 601398, 600036">
+                            <span class="stock-badge" id="currentStockName">工商银行</span>
                         </div>
                         <div class="stock-input-toolbar">
                             <button type="button" id="sidebarAddWatchlistBtn" class="btn-subaction" title="将当前输入的标的加入自选列表">
@@ -293,12 +293,12 @@
                     <div class="suggest-section">
                         <span class="suggest-label"><i class="fa-solid fa-fire"></i> 快捷热门添加：</span>
                         <div class="suggest-tags">
+                            <button type="button" class="btn-tag" data-code="601398" data-name="工商银行">601398 工商银行</button>
                             <button type="button" class="btn-tag" data-code="600036" data-name="招商银行">600036 招商银行</button>
-                            <button type="button" class="btn-tag" data-code="000333" data-name="美的集团">000333 美的集团</button>
-                            <button type="button" class="btn-tag" data-code="601899" data-name="紫金矿业">601899 紫金矿业</button>
-                            <button type="button" class="btn-tag" data-code="510500" data-name="中证500ETF">510500 中证500</button>
-                            <button type="button" class="btn-tag" data-code="588000" data-name="科创50ETF">588000 科创50</button>
-                            <button type="button" class="btn-tag" data-code="600900" data-name="长江电力">600900 长江电力</button>
+                            <button type="button" class="btn-tag" data-code="600941" data-name="中国移动">600941 中国移动</button>
+                            <button type="button" class="btn-tag" data-code="601088" data-name="中国神华">601088 中国神华</button>
+                            <button type="button" class="btn-tag" data-code="300308" data-name="中际旭创">300308 中际旭创</button>
+                            <button type="button" class="btn-tag" data-code="603259" data-name="药明康德">603259 药明康德</button>
                         </div>
                     </div>
                 </div>
@@ -314,6 +314,6 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <!-- Scripts -->
-    <script src="/static/js/app.js?v=2.1.5"></script>
+    <script src="/static/js/app.js?v=2.1.6"></script>
 </body>
 </html>

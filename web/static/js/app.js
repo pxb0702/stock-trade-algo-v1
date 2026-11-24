@@ -306,7 +306,7 @@ function initWatchlistHandlers() {
                 const d = await res.json();
                 if (d.success) {
                     showToast("已成功重置为默认自选股票池", "success");
-                    renderWatchlist(d.watchlist, "601398");
+                    renderWatchlist(d.watchlist, "002463");
                 }
             } catch (err) {
                 showToast(`重置失败: ${err.message}`, "error");
@@ -474,7 +474,7 @@ function renderWatchlist(watchlist, activeCode = null) {
 
 async function runBacktest() {
     const submitBtn = document.getElementById("submitBtn");
-    const code = document.getElementById("stockCode").value.trim() || "601398";
+    const code = document.getElementById("stockCode").value.trim() || "002463";
     const startDate = document.getElementById("startDate").value || "2021-01-01";
     let endDate = document.getElementById("endDate").value;
     if (!endDate) {
